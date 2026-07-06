@@ -6,6 +6,9 @@ import http                 from "http";
 import { env, validateEnv } from "./config/env";
 import { connectDB }        from "./config/db";
 import authRoutes           from "./routes/auth.routes";
+import residentRoutes       from "./routes/resident.routes";
+import collectorRoutes      from "./routes/collector.routes";
+import adminRoutes          from "./routes/admin.routes";
 import { errorHandler }     from "./middleware/error.middleware";
 
 const app = express();
@@ -27,6 +30,9 @@ app.use(morgan("dev"));
 
 // ─── Routes ───
 app.use("/api/auth", authRoutes);
+app.use("/api/resident", residentRoutes);
+app.use("/api/collector", collectorRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
