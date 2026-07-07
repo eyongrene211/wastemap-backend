@@ -3,6 +3,7 @@ import mongoose              from "mongoose"; // ✅ Add this import
 import { User }              from "../models/User.model";
 import { CollectorProfile }  from "../models/CollectorProfile.model";
 import { PickupRequest }     from "../models/PickupRequest.model";
+import { Message }           from "../models/Message.model";
 import { AuthRequest }       from "../middleware/auth.middleware";
 
 // ─── Get Collector Profile ───
@@ -486,5 +487,85 @@ export const getJobs = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Get jobs error:", error);
     return res.status(500).json({ message: "Failed to get jobs" });
+  }
+};
+
+// ─── Get Chat Messages for a Job (Collector) ───
+export const getJobChatMessages = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { id } = req.params; // pickup ID
+
+    const pickup = await PickupRequest.findById(id);
+    if (!pickup) {
+      return res.status(404).json({ message: "Pickup not found" });
+    }
+
+    // Verify collector is assigned to this job
+    if (pickup.collectorId?.toString() !== userId) {
+      return res.status(403).json({ message: "You are not assigned to this pickup" });
+    }
+
+    const messages = await Message.find({ pickupRequestId: id })
+      .populate("senderId", "name role")
+      .sort({ createdAt: 1 });
+
+    return res.status(200).json({ messages });
+  } catch (error) {
+    console.error("Get job chat messages error:", error);
+    return res.status(500).json({ message: "Failed to get messages" });
+  }
+};
+
+// ─── Send Chat Message (Collector) ───
+export const sendJobChatMessage = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { id } = req.params; // pickup ID
+    const { content } = req.body;
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ message: "Message content is required" });
+    }
+
+    const pickup = await PickupRequest.findById(id);
+    if (!pickup) {
+      return res.status(404).json({ message: "Pickup not found" });
+    }
+
+    // Verify collector is assigned to this job
+    if (pickup.collectorId?.toString() !== userId) {
+      return res.status(403).json({ message: "You are not assigned to this pickup" });
+    }
+
+    // Receiver is the resident
+    const receiverId = pickup.residentId;
+
+    const message = new Message({
+      pickupRequestId: id,
+      senderId: userId,
+      receiverId: receiverId,
+      content: content.trim(),
+    });
+
+    await message.save();
+
+    // TODO: Emit via WebSocket for real-time delivery
+
+    return res.status(201).json({
+      message: "Message sent successfully",
+      data: message,
+    });
+  } catch (error) {
+    console.error("Send job chat message error:", error);
+    return res.status(500).json({ message: "Failed to send message" });
   }
 };

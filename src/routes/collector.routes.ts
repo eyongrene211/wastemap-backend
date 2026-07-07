@@ -10,6 +10,8 @@ import {
   markComplete,
   getEarnings,
   getJobs,
+  getJobChatMessages,
+  sendJobChatMessage,
 } from "../controllers/collector.controller";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { roleMiddleware } from "../middleware/role.middleware";
@@ -31,6 +33,10 @@ router.put("/availability", toggleAvailability);
 router.get("/requests", getIncomingRequests);
 router.post("/requests/:id/accept", acceptJob);
 router.post("/requests/:id/decline", declineJob);
+
+// ─── Chat ───
+router.get("/jobs/:id/chat", getJobChatMessages);
+router.post("/jobs/:id/chat", sendJobChatMessage);
 
 // ─── Active Job ───
 router.post("/jobs/:id/en-route", markEnRoute);
