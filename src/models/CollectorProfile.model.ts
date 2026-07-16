@@ -118,6 +118,10 @@ const CollectorProfileSchema = new Schema<ICollectorProfile>(
   }
 );
 
+// Geo-spatial indexes
+CollectorProfileSchema.index({ "serviceArea": "2dsphere" });
+CollectorProfileSchema.index({ "currentLocation": "2dsphere" });
+
 export const CollectorProfile = mongoose.model<ICollectorProfile>(
   "CollectorProfile",
   CollectorProfileSchema

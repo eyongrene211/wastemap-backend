@@ -11,6 +11,12 @@ export interface IUser extends Document {
   language: "en" | "fr";
   isVerified: boolean;
   isSuspended: boolean;
+  avatar?: string;
+  notificationPrefs?: {
+    sms: boolean;
+    push: boolean;
+    reminders: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +67,24 @@ const UserSchema = new Schema<IUser>(
     isSuspended: {
       type: Boolean,
       default: false,
+    },
+    avatar: {
+      type: String,
+      trim: true,
+    },
+    notificationPrefs: {
+      sms: {
+        type: Boolean,
+        default: true,
+      },
+      push: {
+        type: Boolean,
+        default: true,
+      },
+      reminders: {
+        type: Boolean,
+        default: true,
+      },
     },
   },
   {

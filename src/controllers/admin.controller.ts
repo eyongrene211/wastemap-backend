@@ -4,6 +4,7 @@ import { User }              from "../models/User.model";
 import { CollectorProfile }  from "../models/CollectorProfile.model";
 import { PickupRequest }     from "../models/PickupRequest.model";
 import { Message }           from "../models/Message.model";
+import { Payment }           from "../models/Payment.model"; // <-- FIXED: Missing import
 import { AuthRequest }       from "../middleware/auth.middleware";
 
 // ─── Dashboard Stats ───
@@ -32,14 +33,12 @@ export const getStats = async (req: AuthRequest, res: Response) => {
       ]),
     ]);
 
-    // Get today's pickups
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const pickupsToday = await PickupRequest.countDocuments({
       createdAt: { $gte: today },
     });
 
-    // Get recent activity (last 10 events)
     const recentActivity = await PickupRequest.find()
       .sort({ updatedAt: -1 })
       .limit(10)
@@ -101,7 +100,6 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
 
     const total = await User.countDocuments(filter);
 
-    // Get collector profiles for collector users
     const userIds = users.filter((u) => u.role === "collector").map((u) => u._id);
     const collectorProfiles = await CollectorProfile.find({
       userId: { $in: userIds },
@@ -132,11 +130,51 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// ─── Suspend / Activate User ───
+// ─── Get Single User Detail ───
+export const getUserDetail = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    const user = await User.findById(id).select("-passwordHash");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let collectorProfile = null;
+    if (user.role === "collector") {
+      collectorProfile = await CollectorProfile.findOne({ userId: user._id });
+    }
+
+    const pickups = await PickupRequest.find({
+      $or: [{ residentId: user._id }, { collectorId: user._id }],
+    })
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    return res.status(200).json({
+      user,
+      collectorProfile,
+      recentPickups: pickups,
+    });
+  } catch (error) {
+    console.error("Get user detail error:", error);
+    return res.status(500).json({ message: "Failed to get user detail" });
+  }
+};
+
+// ─── Suspend User ───
 export const suspendUser = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-    const { suspended } = req.body;
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
+    const { reason } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
 
     const user = await User.findById(id);
     if (!user) {
@@ -147,11 +185,11 @@ export const suspendUser = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "Cannot suspend admin accounts" });
     }
 
-    user.isSuspended = suspended;
+    user.isSuspended = true;
     await user.save();
 
     return res.status(200).json({
-      message: `User ${suspended ? "suspended" : "activated"} successfully`,
+      message: "User suspended successfully",
       user: {
         id: user._id,
         name: user.name,
@@ -161,6 +199,41 @@ export const suspendUser = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Suspend user error:", error);
     return res.status(500).json({ message: "Failed to suspend user" });
+  }
+};
+
+// ─── Activate User ───
+export const activateUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({ message: "Admin accounts cannot be suspended" });
+    }
+
+    user.isSuspended = false;
+    await user.save();
+
+    return res.status(200).json({
+      message: "User activated successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        isSuspended: user.isSuspended,
+      },
+    });
+  } catch (error) {
+    console.error("Activate user error:", error);
+    return res.status(500).json({ message: "Failed to activate user" });
   }
 };
 
@@ -193,7 +266,11 @@ export const getPendingKYC = async (req: AuthRequest, res: Response) => {
 // ─── Approve KYC ───
 export const approveKYC = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid KYC ID" });
+    }
 
     const profile = await CollectorProfile.findById(id);
     if (!profile) {
@@ -207,7 +284,6 @@ export const approveKYC = async (req: AuthRequest, res: Response) => {
     profile.kycStatus = "approved";
     await profile.save();
 
-    // Also update the user's verified status
     await User.findByIdAndUpdate(profile.userId, { isVerified: true });
 
     return res.status(200).json({
@@ -223,8 +299,12 @@ export const approveKYC = async (req: AuthRequest, res: Response) => {
 // ─── Reject KYC ───
 export const rejectKYC = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
     const { reason } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid KYC ID" });
+    }
 
     if (!reason) {
       return res.status(400).json({ message: "Rejection reason is required" });
@@ -256,7 +336,7 @@ export const rejectKYC = async (req: AuthRequest, res: Response) => {
 // ─── Get All Pickups (Admin) ───
 export const getAllPickups = async (req: AuthRequest, res: Response) => {
   try {
-    const { status, limit = 20, page = 1, startDate, endDate } = req.query;
+    const { status, limit = 20, page = 1, startDate, endDate, search } = req.query;
 
     const filter: any = {};
     if (status) filter.status = status;
@@ -269,6 +349,13 @@ export const getAllPickups = async (req: AuthRequest, res: Response) => {
         ...filter.createdAt,
         $lte: new Date(endDate as string),
       };
+    }
+
+    if (search) {
+      filter.$or = [
+        { neighbourhood: { $regex: search, $options: "i" } },
+        { addressDescription: { $regex: search, $options: "i" } },
+      ];
     }
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -309,67 +396,131 @@ export const getAllPickups = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// ─── Get All Chats ───
-export const getAllChats = async (req: AuthRequest, res: Response) => {
+// ─── Get Single Pickup Detail (Admin) ───
+export const getPickupDetail = async (req: AuthRequest, res: Response) => {
   try {
-    const { limit = 50, page = 1 } = req.query;
+    const id = req.params.id as string; // <-- FIXED: Explicit cast to string
 
-    const skip = (Number(page) - 1) * Number(limit);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid pickup ID" });
+    }
 
-    // Get all conversations (grouped by pickup request)
-    const messages = await Message.find()
+    const pickup = await PickupRequest.findById(id)
+      .populate("residentId", "name phone")
+      .populate("collectorId", "name phone");
+
+    if (!pickup) {
+      return res.status(404).json({ message: "Pickup not found" });
+    }
+
+    const messages = await Message.find({ pickupRequestId: id })
       .populate("senderId", "name role")
-      .populate("receiverId", "name role")
-      .populate("pickupRequestId", "residentId collectorId status")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+      .sort({ createdAt: 1 });
 
-    const total = await Message.countDocuments();
-
-    // Group messages by pickup request
-    const conversations: any = {};
-    messages.forEach((msg) => {
-      const key = (msg.pickupRequestId as any)?._id?.toString();
-      if (key) {
-        if (!conversations[key]) {
-          conversations[key] = {
-            pickupRequestId: msg.pickupRequestId,
-            messages: [],
-          };
-        }
-        conversations[key].messages.push({
-          id: msg._id,
-          content: msg.content,
-          sender: (msg.senderId as any)?.name || "Unknown",
-          senderRole: (msg.senderId as any)?.role || "unknown",
-          receiver: (msg.receiverId as any)?.name || "Unknown",
-          receiverRole: (msg.receiverId as any)?.role || "unknown",
-          createdAt: msg.createdAt,
-          readAt: msg.readAt,
-        });
-      }
-    });
+    const payment = await Payment.findOne({ pickupRequestId: id }); // <-- FIXED: Now works with import
 
     return res.status(200).json({
-      conversations: Object.values(conversations),
-      total,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        pages: Math.ceil(total / Number(limit)),
-      },
+      pickup,
+      messages,
+      payment,
     });
   } catch (error) {
-    console.error("Get chats error:", error);
-    return res.status(500).json({ message: "Failed to get chats" });
+    console.error("Get pickup detail error:", error);
+    return res.status(500).json({ message: "Failed to get pickup detail" });
+  }
+};
+
+// ─── Get Chat Conversations (Admin) ───
+export const getChatConversations = async (req: AuthRequest, res: Response) => {
+  try {
+    // Get all pickups that have messages
+    const pickupsWithChat = await PickupRequest.aggregate([
+      {
+        $lookup: {
+          from: "messages",
+          localField: "_id",
+          foreignField: "pickupRequestId",
+          as: "messages",
+        },
+      },
+      { $match: { "messages.0": { $exists: true } } },
+      {
+        $project: {
+          residentId: 1,
+          collectorId: 1,
+          status: 1,
+          messages: 1,
+        },
+      },
+    ]);
+
+    const conversations = await Promise.all(
+      pickupsWithChat.map(async (pickup) => {
+        const resident = await User.findById(pickup.residentId).select("name phone");
+        const collector = pickup.collectorId
+          ? await User.findById(pickup.collectorId).select("name phone")
+          : null;
+
+        const lastMessage = pickup.messages[pickup.messages.length - 1];
+        const unreadCount = pickup.messages.filter(
+          (m: any) => !m.readAt && m.senderId.toString() !== req.user?.userId
+        ).length;
+
+        return {
+          pickupId: pickup._id,
+          resident: resident || { name: "Unknown", phone: "" },
+          collector: collector || { name: "Unassigned", phone: "" },
+          lastMessage: lastMessage?.content || "",
+          lastMessageTime: lastMessage?.createdAt || pickup.createdAt,
+          unreadCount,
+          status: pickup.status,
+        };
+      })
+    );
+
+    // Sort by last message time (newest first)
+    conversations.sort(
+      (a, b) =>
+        new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+    );
+
+    return res.status(200).json({ conversations });
+  } catch (error) {
+    console.error("Get chat conversations error:", error);
+    return res.status(500).json({ message: "Failed to get conversations" });
+  }
+};
+
+// ─── Get Chat Messages (Admin) ───
+export const getChatMessages = async (req: AuthRequest, res: Response) => {
+  try {
+    const pickupId = req.params.pickupId as string; // <-- FIXED: Explicit cast to string
+
+    if (!pickupId || !mongoose.Types.ObjectId.isValid(pickupId)) {
+      return res.status(400).json({ message: "Invalid pickup ID" });
+    }
+
+    const pickup = await PickupRequest.findById(pickupId);
+    if (!pickup) {
+      return res.status(404).json({ message: "Pickup not found" });
+    }
+
+    const messages = await Message.find({ pickupRequestId: pickupId })
+      .populate("senderId", "name role")
+      .populate("receiverId", "name role")
+      .sort({ createdAt: 1 });
+
+    return res.status(200).json({ messages });
+  } catch (error) {
+    console.error("Get chat messages error:", error);
+    return res.status(500).json({ message: "Failed to get messages" });
   }
 };
 
 // ─── Get Reports ───
 export const getReports = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = "week" } = req.query; // week, month, quarter, year
+    const { period = "week" } = req.query;
 
     let startDate = new Date();
     switch (period) {

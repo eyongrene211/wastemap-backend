@@ -25,8 +25,8 @@ export interface IPickupRequest extends Document {
   scheduledDate?: Date;
   scheduledTimeSlot?: "morning" | "afternoon" | "evening";
   priceAgreed: number;
-  escrowPaymentId?: string;
-  paymentStatus: "pending" | "held" | "released" | "refunded";
+  escrowPaymentId?: string; // ✅ stored as string (ObjectId.toString())
+  paymentStatus: "pending" | "held" | "released" | "refunded" | "failed"; // ✅ added "failed"
   completedAt?: Date;
   cancelledAt?: Date;
   cancellationReason?: string;
@@ -104,11 +104,11 @@ const PickupRequestSchema = new Schema<IPickupRequest>(
       required: true,
     },
     escrowPaymentId: {
-      type: String,
+      type: String, // ✅ already String — good
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "held", "released", "refunded"],
+      enum: ["pending", "held", "released", "refunded", "failed"], // ✅ added "failed"
       default: "pending",
     },
     completedAt: {

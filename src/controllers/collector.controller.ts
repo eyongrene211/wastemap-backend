@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import mongoose              from "mongoose"; // ✅ Add this import
+import mongoose              from "mongoose";
 import { User }              from "../models/User.model";
 import { CollectorProfile }  from "../models/CollectorProfile.model";
 import { PickupRequest }     from "../models/PickupRequest.model";
@@ -85,7 +85,7 @@ export const toggleAvailability = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { status } = req.body; // "online" or "offline"
+    const { status } = req.body;
 
     if (!status || !["online", "offline"].includes(status)) {
       return res.status(400).json({ message: "Status must be 'online' or 'offline'" });
@@ -96,12 +96,10 @@ export const toggleAvailability = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Collector profile not found" });
     }
 
-    // Check if collector is approved
     if (profile.kycStatus !== "approved") {
       return res.status(403).json({ message: "KYC not approved. Cannot go online." });
     }
 
-    // Check if at capacity (going online only)
     if (status === "online" && profile.activeJobs >= profile.capacityLimit) {
       return res.status(400).json({
         message: `At capacity (${profile.activeJobs}/${profile.capacityLimit} jobs). Complete a job first.`,
@@ -136,7 +134,6 @@ export const getIncomingRequests = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Collector profile not found" });
     }
 
-    // Only show requests if online and approved
     if (profile.availability !== "online") {
       return res.status(400).json({ message: "You are offline. Go online to see requests." });
     }
@@ -145,8 +142,6 @@ export const getIncomingRequests = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "KYC not approved. Cannot accept requests." });
     }
 
-    // ✅ FIX 1: Remove 'city' filter (serviceArea doesn't have city property)
-    // For MVP, get all pending pickups; later we can implement proper service area matching
     const requests = await PickupRequest.find({
       status: "pending",
     })
@@ -181,7 +176,6 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Collector profile not found" });
     }
 
-    // Check if online and approved
     if (profile.availability !== "online") {
       return res.status(400).json({ message: "You are offline. Go online to accept jobs." });
     }
@@ -190,7 +184,6 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "KYC not approved. Cannot accept jobs." });
     }
 
-    // Check capacity
     if (profile.activeJobs >= profile.capacityLimit) {
       return res.status(400).json({
         message: `At capacity (${profile.activeJobs}/${profile.capacityLimit} jobs). Complete a job first.`,
@@ -206,16 +199,12 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "This pickup is no longer available" });
     }
 
-    // ✅ FIX 2: Convert userId string to ObjectId
     pickup.collectorId = new mongoose.Types.ObjectId(userId);
     pickup.status = "assigned";
     await pickup.save();
 
-    // Update collector active jobs count
     profile.activeJobs += 1;
     await profile.save();
-
-    // TODO: Notify resident via WebSocket / push notification
 
     return res.status(200).json({
       message: "Job accepted successfully",
@@ -249,7 +238,6 @@ export const declineJob = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "This pickup is no longer available" });
     }
 
-    // Optionally log the decline reason (store for analytics)
     console.log(`Collector ${userId} declined pickup ${id}. Reason: ${reason || "Not specified"}`);
 
     return res.status(200).json({
@@ -279,7 +267,6 @@ export const markEnRoute = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Pickup not found" });
     }
 
-    // Verify collector is assigned to this job
     if (pickup.collectorId?.toString() !== userId) {
       return res.status(403).json({ message: "You are not assigned to this pickup" });
     }
@@ -291,7 +278,6 @@ export const markEnRoute = async (req: AuthRequest, res: Response) => {
     pickup.status = "en_route";
     await pickup.save();
 
-    // Update collector's current location
     if (lat && lng) {
       const profile = await CollectorProfile.findOne({ userId });
       if (profile) {
@@ -303,9 +289,6 @@ export const markEnRoute = async (req: AuthRequest, res: Response) => {
         await profile.save();
       }
     }
-
-    // TODO: Emit via WebSocket to resident
-    // io.to(`request:${id}`).emit('tracking:update', { lat, lng, status: 'en_route' });
 
     return res.status(200).json({
       message: "Marked as en route",
@@ -333,7 +316,6 @@ export const markComplete = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Pickup not found" });
     }
 
-    // Verify collector is assigned to this job
     if (pickup.collectorId?.toString() !== userId) {
       return res.status(403).json({ message: "You are not assigned to this pickup" });
     }
@@ -351,16 +333,12 @@ export const markComplete = async (req: AuthRequest, res: Response) => {
     if (afterPhoto) pickup.photoUrl = afterPhoto;
     await pickup.save();
 
-    // Update collector profile
     const profile = await CollectorProfile.findOne({ userId });
     if (profile) {
       profile.activeJobs = Math.max(0, profile.activeJobs - 1);
       profile.completedJobs += 1;
       await profile.save();
     }
-
-    // TODO: Emit via WebSocket to resident
-    // io.to(`request:${id}`).emit('status:update', { status: 'completed' });
 
     return res.status(200).json({
       message: "Job marked as completed. Awaiting resident confirmation for payment release.",
@@ -381,9 +359,8 @@ export const getEarnings = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { period = "week" } = req.query; // week, month, all
+    const { period = "week" } = req.query;
 
-    // Calculate date range
     let startDate = new Date();
     switch (period) {
       case "week":
@@ -408,7 +385,6 @@ export const getEarnings = async (req: AuthRequest, res: Response) => {
     const totalAmount = pickups.reduce((sum, p) => sum + p.priceAgreed, 0);
     const totalJobs = pickups.length;
 
-    // Get all-time stats
     const allPickups = await PickupRequest.find({
       collectorId: userId,
       status: "completed",
@@ -417,10 +393,6 @@ export const getEarnings = async (req: AuthRequest, res: Response) => {
     const allTimeAmount = allPickups.reduce((sum, p) => sum + p.priceAgreed, 0);
     const allTimeJobs = allPickups.length;
 
-    // Get average rating
-    // TODO: Add rating calculation when reviews are implemented
-
-    // ✅ FIX 3: Use computed property name with string index
     const periodKey = period as string;
     const summary: any = {
       allTime: {
@@ -490,6 +462,43 @@ export const getJobs = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// ─── ✅ Get Single Job by ID (FIXED) ───
+export const getJobById = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // ✅ Fix: Cast id to string (Express params can be string | string[])
+    const id = req.params.id as string;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid job ID" });
+    }
+
+    const job = await PickupRequest.findById(id)
+      .populate("residentId", "name phone")
+      .populate("collectorId", "name phone");
+
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+
+    // Check if this collector is assigned to this job
+    const collector = job.collectorId as any;
+    if (collector?._id?.toString() !== userId) {
+      return res.status(403).json({ message: "Access denied. You are not assigned to this job." });
+    }
+
+    return res.status(200).json({ job });
+  } catch (error) {
+    console.error("Get job by ID error:", error);
+    return res.status(500).json({ message: "Failed to get job" });
+  }
+};
+
 // ─── Get Chat Messages for a Job (Collector) ───
 export const getJobChatMessages = async (req: AuthRequest, res: Response) => {
   try {
@@ -498,14 +507,13 @@ export const getJobChatMessages = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { id } = req.params; // pickup ID
+    const { id } = req.params;
 
     const pickup = await PickupRequest.findById(id);
     if (!pickup) {
       return res.status(404).json({ message: "Pickup not found" });
     }
 
-    // Verify collector is assigned to this job
     if (pickup.collectorId?.toString() !== userId) {
       return res.status(403).json({ message: "You are not assigned to this pickup" });
     }
@@ -529,7 +537,7 @@ export const sendJobChatMessage = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { id } = req.params; // pickup ID
+    const { id } = req.params;
     const { content } = req.body;
 
     if (!content || content.trim().length === 0) {
@@ -541,12 +549,10 @@ export const sendJobChatMessage = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Pickup not found" });
     }
 
-    // Verify collector is assigned to this job
     if (pickup.collectorId?.toString() !== userId) {
       return res.status(403).json({ message: "You are not assigned to this pickup" });
     }
 
-    // Receiver is the resident
     const receiverId = pickup.residentId;
 
     const message = new Message({
@@ -557,8 +563,6 @@ export const sendJobChatMessage = async (req: AuthRequest, res: Response) => {
     });
 
     await message.save();
-
-    // TODO: Emit via WebSocket for real-time delivery
 
     return res.status(201).json({
       message: "Message sent successfully",

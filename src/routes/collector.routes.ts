@@ -10,6 +10,7 @@ import {
   markComplete,
   getEarnings,
   getJobs,
+  getJobById,                // ✅ NEW: Import getJobById
   getJobChatMessages,
   sendJobChatMessage,
 } from "../controllers/collector.controller";
@@ -44,6 +45,7 @@ router.post("/jobs/:id/complete", markComplete);
 
 // ─── History & Earnings ───
 router.get("/jobs", getJobs);
+router.get("/jobs/:id", getJobById);      // ✅ NEW: Get single job by ID
 router.get("/earnings", getEarnings);
 
 export default router;

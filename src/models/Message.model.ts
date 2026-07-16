@@ -43,4 +43,9 @@ const MessageSchema = new Schema<IMessage>(
   }
 );
 
+// ✅ Indexes for faster queries
+MessageSchema.index({ pickupRequestId: 1, createdAt: 1 });
+MessageSchema.index({ senderId: 1, receiverId: 1 });
+MessageSchema.index({ readAt: 1 });
+
 export const Message = mongoose.model<IMessage>("Message", MessageSchema);
