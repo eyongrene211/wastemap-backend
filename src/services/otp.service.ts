@@ -1,6 +1,6 @@
+// src/services/otp.service.ts
 import crypto from "crypto";
 
-// Store OTPs in memory (use Redis in production)
 interface OTPRecord {
   otp: string;
   expiresAt: Date;
@@ -17,44 +17,40 @@ export const generateOTP = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-export const storeOTP = (phone: string, otp: string) => {
+export const storeOTP = (identifier: string, otp: string) => {
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + OTP_EXPIRY_MINUTES);
-  otpStore.set(phone, { otp, expiresAt, attempts: 0 });
+  otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
 };
 
-export const verifyOTP = (phone: string, otp: string): boolean => {
-  const record = otpStore.get(phone);
+export const verifyOTP = (identifier: string, otp: string): boolean => {
+  const record = otpStore.get(identifier);
   if (!record) return false;
 
-  // Check expiry
   if (new Date() > record.expiresAt) {
-    otpStore.delete(phone);
+    otpStore.delete(identifier);
     return false;
   }
 
-  // Check attempts (max 3)
   if (record.attempts >= MAX_ATTEMPTS) {
-    otpStore.delete(phone);
+    otpStore.delete(identifier);
     return false;
   }
 
-  // Verify
   if (record.otp !== otp) {
     record.attempts += 1;
-    otpStore.set(phone, record);
+    otpStore.set(identifier, record);
     return false;
   }
 
-  // Success — delete OTP
-  otpStore.delete(phone);
+  otpStore.delete(identifier);
   return true;
 };
 
-export const getOTPRecord = (phone: string): OTPRecord | undefined => {
-  return otpStore.get(phone);
+export const getOTPRecord = (identifier: string): OTPRecord | undefined => {
+  return otpStore.get(identifier);
 };
 
-export const clearOTP = (phone: string) => {
-  otpStore.delete(phone);
+export const clearOTP = (identifier: string) => {
+  otpStore.delete(identifier);
 };

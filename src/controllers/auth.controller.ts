@@ -3,35 +3,38 @@ import bcrypt                               from "bcryptjs";
 import { User }                             from "../models/User.model";
 import { CollectorProfile }                 from "../models/CollectorProfile.model";
 import { generateOTP, storeOTP, verifyOTP } from "../services/otp.service";
-import { sendOTP }                          from "../services/sms.service";
+import { sendOTPEmail }                     from "../services/email.service"; // ✅ now using email service
 import { generateTokens }                   from "../utils/jwt.utils";
 import { verifyRefreshToken }               from "../utils/jwt.utils";
 
-// ─── Request OTP ───
+// ─── Request OTP (Email only) ───
 export const requestOTP = async (req: Request, res: Response) => {
   try {
-    const { phone } = req.body;
+    const { email } = req.body; // now we only accept email
 
-    if (!phone || phone.length < 8) {
-      return res.status(400).json({ message: "Valid phone number required" });
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    // Check if user exists
-    const existingUser = await User.findOne({ phone });
+    // Check if user exists with this email
+    const existingUser = await User.findOne({ email });
     if (existingUser && existingUser.isSuspended) {
       return res.status(403).json({ message: "Account suspended" });
     }
 
     // Generate and store OTP
     const otp = generateOTP();
-    storeOTP(phone, otp);
+    storeOTP(email, otp); // store under email
 
-    // Send OTP via SMS
-    await sendOTP(phone, otp);
+    // Send OTP via email
+    const sent = await sendOTPEmail(email, otp);
+    if (!sent && process.env.NODE_ENV !== "development") {
+      return res.status(500).json({ message: "Failed to send OTP email" });
+    }
 
     return res.status(200).json({
       message: "OTP sent successfully",
-      phone: phone,
+      email,
       // In development, return OTP for testing
       ...(process.env.NODE_ENV === "development" && { otp }),
     });
@@ -44,15 +47,19 @@ export const requestOTP = async (req: Request, res: Response) => {
 // ─── Verify OTP + Register OR Login ───
 export const verifyOTPAndRegister = async (req: Request, res: Response) => {
   try {
-    const { phone, otp, name, role, city, neighbourhood, language, password } = req.body;
+    const { email, otp, name, role, city, neighbourhood, language, password, phone } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
 
     // 1. Verify OTP
-    if (!verifyOTP(phone, otp)) {
+    if (!verifyOTP(email, otp)) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
     // 2. Check if user already exists
-    let user = await User.findOne({ phone });
+    let user = await User.findOne({ email });
 
     if (user) {
       // ─── USER EXISTS — LOGIN ───
@@ -66,6 +73,7 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
         user: {
           id: user._id,
           name: user.name,
+          email: user.email,
           phone: user.phone,
           role: user.role,
           isVerified: user.isVerified,
@@ -88,8 +96,8 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
     }
 
     // Create user
-    user = new User({
-      phone,
+    const userData: any = {
+      email,
       name,
       role,
       city,
@@ -97,8 +105,10 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
       language: language || "en",
       isVerified: true,
       passwordHash,
-    });
+      phone: phone || "", // phone is optional but we collect it in profile step
+    };
 
+    user = new User(userData);
     await user.save();
 
     // If collector, create collector profile
@@ -121,6 +131,7 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
       user: {
         id: user._id,
         name: user.name,
+        email: user.email,
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
@@ -130,10 +141,11 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Verify OTP error:", error);
 
-    // Handle duplicate key error (phone already exists)
+    // Handle duplicate key error
     if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
       return res.status(400).json({
-        message: "Phone number already registered. Please login.",
+        message: `${field} already registered. Please login.`,
       });
     }
 
@@ -144,19 +156,19 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
 // ─── Login with OTP (Explicit) ───
 export const loginWithOTP = async (req: Request, res: Response) => {
   try {
-    const { phone, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!phone || !otp) {
-      return res.status(400).json({ message: "Phone and OTP required" });
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP required" });
     }
 
     // Verify OTP
-    if (!verifyOTP(phone, otp)) {
+    if (!verifyOTP(email, otp)) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
     // Find user
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
         message: "User not found. Please register first.",
@@ -174,6 +186,7 @@ export const loginWithOTP = async (req: Request, res: Response) => {
       user: {
         id: user._id,
         name: user.name,
+        email: user.email,
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,
@@ -186,16 +199,16 @@ export const loginWithOTP = async (req: Request, res: Response) => {
   }
 };
 
-// ─── Login with Password (v2) ───
+// ─── Login with Password ───
 export const login = async (req: Request, res: Response) => {
   try {
-    const { phone, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!phone || !password) {
-      return res.status(400).json({ message: "Phone and password required" });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
     }
 
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
@@ -222,6 +235,7 @@ export const login = async (req: Request, res: Response) => {
       user: {
         id: user._id,
         name: user.name,
+        email: user.email,
         phone: user.phone,
         role: user.role,
         isVerified: user.isVerified,

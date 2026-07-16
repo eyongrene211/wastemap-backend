@@ -15,10 +15,13 @@ export const env = {
   JWT_ACCESS_EXPIRY: process.env.JWT_ACCESS_EXPIRY || "15m",
   JWT_REFRESH_EXPIRY: process.env.JWT_REFRESH_EXPIRY || "7d",
 
-  // ─── Africa's Talking ───
+  // ─── Africa's Talking (legacy — kept for later phone SMS re-integration) ───
   AFRICASTALKING_API_KEY: process.env.AFRICASTALKING_API_KEY || "",
   AFRICASTALKING_USERNAME: process.env.AFRICASTALKING_USERNAME || "",
   AFRICASTALKING_SENDER: process.env.AFRICASTALKING_SENDER || "WASTEMAP",
+
+  // ─── Resend (Email OTP) ───
+  RESEND_API_KEY: process.env.RESEND_API_KEY || "",
 
   // ─── Cloudinary ───
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || "",
@@ -52,7 +55,7 @@ export const validateEnv = () => {
     "MONGODB_URI",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
-    // PayUnit and Fapshi are optional for mock mode
+    // PayUnit, Fapshi, and Resend are optional for mock/dev mode
   ];
   for (const key of required) {
     if (!process.env[key]) {
