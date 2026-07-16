@@ -15,13 +15,17 @@ export const env = {
   JWT_ACCESS_EXPIRY: process.env.JWT_ACCESS_EXPIRY || "15m",
   JWT_REFRESH_EXPIRY: process.env.JWT_REFRESH_EXPIRY || "7d",
 
+  // ─── Email (Nodemailer with Gmail) ───
+  APP_EMAIL: process.env.APP_EMAIL || "",
+  GOOGLE_APP_PASSWORD: process.env.GOOGLE_APP_PASSWORD || "",
+
+  // ─── Resend (Legacy — kept for reference, but we're using Nodemailer now) ───
+  RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+
   // ─── Africa's Talking (legacy — kept for later phone SMS re-integration) ───
   AFRICASTALKING_API_KEY: process.env.AFRICASTALKING_API_KEY || "",
   AFRICASTALKING_USERNAME: process.env.AFRICASTALKING_USERNAME || "",
   AFRICASTALKING_SENDER: process.env.AFRICASTALKING_SENDER || "WASTEMAP",
-
-  // ─── Resend (Email OTP) ───
-  RESEND_API_KEY: process.env.RESEND_API_KEY || "",
 
   // ─── Cloudinary ───
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || "",
@@ -55,11 +59,29 @@ export const validateEnv = () => {
     "MONGODB_URI",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
-    // PayUnit, Fapshi, and Resend are optional for mock/dev mode
   ];
-  for (const key of required) {
-    if (!process.env[key]) {
-      throw new Error(`Missing required environment variable: ${key}`);
+
+  const missingRequired = required.filter((key) => !process.env[key]);
+
+  if (missingRequired.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missingRequired.join(", ")}`
+    );
+  }
+
+  // ─── Optional: Warn about missing email credentials ───
+  if (!process.env.APP_EMAIL || !process.env.GOOGLE_APP_PASSWORD) {
+    console.warn(
+      "⚠️  Email credentials missing (APP_EMAIL / GOOGLE_APP_PASSWORD). OTP emails will not work until set."
+    );
+  }
+
+  // ─── Optional: Warn about missing payment credentials ───
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.PAYUNIT_API_KEY && !process.env.FAPSHI_COLLECTION_API_KEY) {
+      console.warn(
+        "⚠️  No payment API keys set (PayUnit or Fapshi). Payment features will use mock mode."
+      );
     }
   }
 };

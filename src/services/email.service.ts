@@ -1,49 +1,79 @@
-import { Resend }  from "resend";
-import { env }     from "../config/env";
+import nodemailer from 'nodemailer';
+import { env }    from '../config/env';
 
-const resend = new Resend(env.RESEND_API_KEY);
+// ─── Create Transporter ───
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: env.APP_EMAIL,
+    pass: env.GOOGLE_APP_PASSWORD,
+  },
+});
 
-// Resend's free-tier test sender — works with zero domain verification.
-// Swap to a verified custom domain address later if you set one up.
-const FROM_ADDRESS = "WasteMap CM <onboarding@resend.dev>";
-
-export const sendOTPEmail = async (email: string, otp: string): Promise<boolean> => {
-  const subject = "Your WasteMap CM verification code";
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color: #00703C;">WasteMap CM</h2>
-      <p>Your verification code is:</p>
-      <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1a1a1a;">
-        ${otp}
-      </p>
-      <p style="color: #666; font-size: 14px;">This code expires in 10 minutes.</p>
-      <p style="color: #999; font-size: 12px;">
-        If you didn't request this code, you can safely ignore this email.
-      </p>
-    </div>
-  `;
-
-  // In development, just log it — avoids burning email quota during local testing
-  if (env.NODE_ENV === "development") {
-    console.log(`📧 OTP for ${email}: ${otp}`);
-    return true;
-  }
-
+// ─── Verify Transporter on Startup ───
+export async function verifyTransporter(): Promise<void> {
   try {
-    const { error } = await resend.emails.send({
-      from: FROM_ADDRESS,
-      to: email,
+    await transporter.verify();
+    console.log('📧 Email server is ready (Gmail)');
+  } catch (error) {
+    console.error('❌ Email server verification failed:', error);
+  }
+}
+
+// ─── Generic Email Sender ───
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string
+): Promise<boolean> {
+  try {
+    const info = await transporter.sendMail({
+      from: `"WasteMap CM" <${env.APP_EMAIL}>`,
+      to,
       subject,
       html,
     });
-
-    if (error) {
-      console.error("Resend email error:", error);
-      return false;
-    }
+    console.log(`📧 Email sent: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error("Email sending failed:", error);
+    console.error('Failed to send email:', error);
     return false;
   }
-};
+}
+
+// ─── Send OTP Email ───
+export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
+  const subject = 'Your WasteMap CM Verification Code';
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7e4; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #00703C; font-size: 24px; margin: 0;">♻️ WasteMap CM</h1>
+        <p style="color: #666; font-size: 14px; margin: 4px 0 0;">Cameroon's Waste. Collected on Demand.</p>
+      </div>
+
+      <div style="text-align: center; padding: 24px 0; border-top: 1px solid #e5e7e4; border-bottom: 1px solid #e5e7e4;">
+        <p style="color: #333; font-size: 16px; margin: 0 0 16px;">Your verification code is:</p>
+        <p style="font-size: 42px; font-weight: bold; letter-spacing: 8px; color: #00703C; margin: 0;">${otp}</p>
+        <p style="color: #666; font-size: 14px; margin: 16px 0 0;">This code expires in <strong>10 minutes</strong>.</p>
+      </div>
+
+      <div style="padding: 16px 0; text-align: center;">
+        <p style="color: #999; font-size: 12px; margin: 0;">
+          If you didn't request this code, you can safely ignore this email.
+        </p>
+        <p style="color: #999; font-size: 12px; margin: 8px 0 0;">
+          © 2026 WasteMap CM – Built in Cameroon.
+        </p>
+      </div>
+    </div>
+  `;
+
+  // In development, just log it — avoids burning email quota
+  if (process.env.NODE_ENV === "development") {
+    console.log(`📧 [DEV] OTP for ${to}: ${otp}`);
+    return true;
+  }
+
+  return sendEmail(to, subject, html);
+}
