@@ -8,6 +8,7 @@ import { connectDB }        from "./config/db";
 import authRoutes           from "./routes/auth.routes";
 import residentRoutes       from "./routes/resident.routes";
 import collectorRoutes      from "./routes/collector.routes";
+import uploadRoutes         from "./routes/upload.routes";
 import adminRoutes          from "./routes/admin.routes";
 import paymentRoutes        from "./routes/payment.routes";
 import { errorHandler }     from "./middleware/error.middleware";
@@ -68,6 +69,7 @@ app.use("/api/resident", residentRoutes);
 app.use("/api/collector", collectorRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
