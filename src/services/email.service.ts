@@ -2,22 +2,28 @@ import nodemailer from 'nodemailer';
 import { env }    from '../config/env';
 
 // ─── Create Transporter ───
+// ✅ Use port 587 (TLS) instead of 465 (SSL) – Render allows this
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: env.APP_EMAIL,
     pass: env.GOOGLE_APP_PASSWORD,
   },
+  port: 587,
+  secure: false, // false for port 587 (TLS)
+  tls: {
+    rejectUnauthorized: false, // Prevents SSL handshake issues on Render
+  },
 });
 
-// ─── Verify Transporter ───
+// ─── Verify Transporter on Startup ───
 export async function verifyTransporter(): Promise<void> {
   try {
     await transporter.verify();
-    console.log('✅ Email transporter is ready (Gmail)');
+    console.log('✅ Email transporter is ready (Gmail - TLS)');
   } catch (error) {
-    console.error('❌ Email transporter verification failed. Please check APP_EMAIL and GOOGLE_APP_PASSWORD.');
-    console.error(error);
+    console.error('❌ Email transporter verification failed. Check APP_EMAIL and GOOGLE_APP_PASSWORD.');
+    console.error('Error:', (error as Error).message);
   }
 }
 
@@ -37,12 +43,12 @@ export async function sendEmail(
     console.log(`📧 Email sent to ${to}: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('❌ Failed to send email:', error);
+    console.error('❌ Failed to send email:', (error as Error).message);
     return false;
   }
 }
 
-// ─── Send OTP Email (Always sends in production AND development) ───
+// ─── Send OTP Email ───
 export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
   const subject = 'Your WasteMap CM Verification Code';
 
@@ -67,12 +73,11 @@ export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
   // Always log OTP (for debugging)
   console.log(`📧 OTP for ${to}: ${otp}`);
 
-  // Always attempt to send real email (in all environments)
+  // Always attempt to send (even in development)
   const sent = await sendEmail(to, subject, html);
 
-  // If send fails, we still have the OTP logged (fallback)
   if (!sent) {
-    console.error(`❌ Email delivery failed for ${to}. OTP available in logs.`);
+    console.log(`⚠️ Email delivery failed, but OTP is logged above for fallback.`);
   }
 
   return sent;

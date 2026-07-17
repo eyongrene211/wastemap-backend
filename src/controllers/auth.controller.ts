@@ -3,20 +3,20 @@ import bcrypt                               from "bcryptjs";
 import { User }                             from "../models/User.model";
 import { CollectorProfile }                 from "../models/CollectorProfile.model";
 import { generateOTP, storeOTP, verifyOTP } from "../services/otp.service";
-import { sendOTPEmail }                     from "../services/email.service"; // ✅ now using email service
+import { sendOTPEmail }                     from "../services/email.service";
 import { generateTokens }                   from "../utils/jwt.utils";
 import { verifyRefreshToken }               from "../utils/jwt.utils";
 
-// ─── Request OTP (Email only) ───
+// ─── Request OTP ───
 export const requestOTP = async (req: Request, res: Response) => {
   try {
-    const { email } = req.body; // now we only accept email
+    const { email } = req.body;
 
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    // Check if user exists with this email
+    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser && existingUser.isSuspended) {
       return res.status(403).json({ message: "Account suspended" });
@@ -24,19 +24,19 @@ export const requestOTP = async (req: Request, res: Response) => {
 
     // Generate and store OTP
     const otp = generateOTP();
-    storeOTP(email, otp); // store under email
+    storeOTP(email, otp);
 
-    // Send OTP via email
-    const sent = await sendOTPEmail(email, otp);
-    if (!sent && process.env.NODE_ENV !== "development") {
-      return res.status(500).json({ message: "Failed to send OTP email" });
-    }
+    // ─── Send email (non-blocking) ───
+    sendOTPEmail(email, otp).catch((err) => {
+      console.error('Background email send failed:', err.message);
+    });
 
+    // ✅ ALWAYS return OTP in response for demo fallback
+    // In production, remove `otp` from response
     return res.status(200).json({
       message: "OTP sent successfully",
       email,
-      // In development, return OTP for testing
-      ...(process.env.NODE_ENV === "development" && { otp }),
+      otp, // ⬅️ This allows auto-fill on frontend
     });
   } catch (error) {
     console.error("Request OTP error:", error);
@@ -105,7 +105,7 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
       language: language || "en",
       isVerified: true,
       passwordHash,
-      phone: phone || "", // phone is optional but we collect it in profile step
+      phone: phone || "",
     };
 
     user = new User(userData);

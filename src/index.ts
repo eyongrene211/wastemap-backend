@@ -1,19 +1,19 @@
-import express               from "express";
-import cors                  from "cors";
-import helmet                from "helmet";
-import morgan                from "morgan";
-import http                  from "http";
-import { env, validateEnv }  from "./config/env";
-import { connectDB }         from "./config/db";
-import authRoutes            from "./routes/auth.routes";
-import residentRoutes        from "./routes/resident.routes";
-import collectorRoutes       from "./routes/collector.routes";
-import uploadRoutes          from "./routes/upload.routes";
-import adminRoutes           from "./routes/admin.routes";
-import paymentRoutes         from "./routes/payment.routes";
-import { errorHandler }      from "./middleware/error.middleware";
-import { setupWebSocket }    from "./sockets";
-import { verifyTransporter } from "./services/email.service"; // ✅ Import verifier
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import http from "http";
+import { env, validateEnv } from "./config/env";
+import { connectDB } from "./config/db";
+import authRoutes from "./routes/auth.routes";
+import residentRoutes from "./routes/resident.routes";
+import collectorRoutes from "./routes/collector.routes";
+import uploadRoutes from "./routes/upload.routes";
+import adminRoutes from "./routes/admin.routes";
+import paymentRoutes from "./routes/payment.routes";
+import { errorHandler } from "./middleware/error.middleware";
+import { setupWebSocket } from "./sockets";
+import { verifyTransporter } from "./services/email.service";
 
 const app = express();
 const server = http.createServer(app);
@@ -24,7 +24,7 @@ validateEnv();
 // ─── CORS Configuration ───
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://wastemap-frontend-zeta.vercel.app/",
+  "https://wastemap-frontend-zeta.vercel.app",
   env.CLIENT_URL,
 ].filter(Boolean);
 
@@ -81,7 +81,7 @@ app.use(errorHandler);
 connectDB();
 
 // ─── Verify Email Transporter ───
-verifyTransporter(); // ✅ This will log success or failure
+verifyTransporter();
 
 // ─── Setup WebSocket ───
 const io = setupWebSocket(server);
