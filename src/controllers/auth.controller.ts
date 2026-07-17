@@ -16,27 +16,24 @@ export const requestOTP = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser && existingUser.isSuspended) {
       return res.status(403).json({ message: "Account suspended" });
     }
 
-    // Generate and store OTP
     const otp = generateOTP();
     storeOTP(email, otp);
 
-    // ─── Send email (non-blocking) ───
+    // Non-blocking email send
     sendOTPEmail(email, otp).catch((err) => {
       console.error('Background email send failed:', err.message);
     });
 
-    // ✅ ALWAYS return OTP in response for demo fallback
-    // In production, remove `otp` from response
+    // ✅ Return OTP for demo fallback
     return res.status(200).json({
       message: "OTP sent successfully",
       email,
-      otp, // ⬅️ This allows auto-fill on frontend
+      otp,
     });
   } catch (error) {
     console.error("Request OTP error:", error);
@@ -44,7 +41,7 @@ export const requestOTP = async (req: Request, res: Response) => {
   }
 };
 
-// ─── Verify OTP + Register (NOT LOGIN) ───
+// ─── Verify OTP – Handles BOTH Login & Registration ───
 export const verifyOTPAndRegister = async (req: Request, res: Response) => {
   try {
     const { email, otp, name, role, city, neighbourhood, language, password, phone } = req.body;
@@ -61,29 +58,48 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
     // 2. Check if user already exists
     const existingUser = await User.findOne({ email });
 
+    // ─── If user exists ───
     if (existingUser) {
-      // ❌ EXISTING USER – REJECT REGISTRATION
-      // The user should use the login endpoint instead.
-      return res.status(400).json({
-        message: "Email already registered. Please login instead.",
-        code: "EMAIL_EXISTS",
+      // ✅ If registration fields (name, role) are present → reject (registration attempt)
+      if (name && role) {
+        return res.status(400).json({
+          message: "Email already registered. Please login instead.",
+          code: "EMAIL_EXISTS",
+        });
+      }
+
+      // ✅ Otherwise, it's a login attempt → proceed with login
+      if (existingUser.isSuspended) {
+        return res.status(403).json({ message: "Account suspended" });
+      }
+
+      const tokens = generateTokens(existingUser._id.toString(), existingUser.role);
+      return res.status(200).json({
+        message: "Login successful",
+        user: {
+          id: existingUser._id,
+          name: existingUser.name,
+          email: existingUser.email,
+          phone: existingUser.phone,
+          role: existingUser.role,
+          isVerified: existingUser.isVerified,
+        },
+        tokens,
       });
     }
 
-    // 3. ─── NEW USER — REGISTER ───
+    // ─── NEW USER – REGISTER ───
     if (!name || !role) {
       return res.status(400).json({
         message: "Name and role are required for new users",
       });
     }
 
-    // Hash password if provided (optional)
     let passwordHash: string | undefined;
     if (password && password.length >= 6) {
       passwordHash = await bcrypt.hash(password, 10);
     }
 
-    // Create user
     const userData: any = {
       email,
       name,
@@ -99,7 +115,6 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
     const user = new User(userData);
     await user.save();
 
-    // If collector, create collector profile
     if (role === "collector") {
       const collectorProfile = new CollectorProfile({
         userId: user._id,
@@ -128,15 +143,12 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Verify OTP error:", error);
-
-    // Handle duplicate key error (if email already exists due to race condition)
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
       return res.status(400).json({
         message: `${field} already registered. Please login.`,
       });
     }
-
     return res.status(500).json({ message: "Registration failed" });
   }
 };
@@ -150,17 +162,13 @@ export const loginWithOTP = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Email and OTP required" });
     }
 
-    // Verify OTP
     if (!verifyOTP(email, otp)) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    // Find user
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({
-        message: "User not found. Please register first.",
-      });
+      return res.status(404).json({ message: "User not found. Please register first." });
     }
 
     if (user.isSuspended) {
