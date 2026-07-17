@@ -1,18 +1,19 @@
-import express              from "express";
-import cors                 from "cors";
-import helmet               from "helmet";
-import morgan               from "morgan";
-import http                 from "http";
-import { env, validateEnv } from "./config/env";
-import { connectDB }        from "./config/db";
-import authRoutes           from "./routes/auth.routes";
-import residentRoutes       from "./routes/resident.routes";
-import collectorRoutes      from "./routes/collector.routes";
-import uploadRoutes         from "./routes/upload.routes";
-import adminRoutes          from "./routes/admin.routes";
-import paymentRoutes        from "./routes/payment.routes";
-import { errorHandler }     from "./middleware/error.middleware";
-import { setupWebSocket }   from "./sockets";
+import express               from "express";
+import cors                  from "cors";
+import helmet                from "helmet";
+import morgan                from "morgan";
+import http                  from "http";
+import { env, validateEnv }  from "./config/env";
+import { connectDB }         from "./config/db";
+import authRoutes            from "./routes/auth.routes";
+import residentRoutes        from "./routes/resident.routes";
+import collectorRoutes       from "./routes/collector.routes";
+import uploadRoutes          from "./routes/upload.routes";
+import adminRoutes           from "./routes/admin.routes";
+import paymentRoutes         from "./routes/payment.routes";
+import { errorHandler }      from "./middleware/error.middleware";
+import { setupWebSocket }    from "./sockets";
+import { verifyTransporter } from "./services/email.service"; // ✅ Import verifier
 
 const app = express();
 const server = http.createServer(app);
@@ -21,14 +22,12 @@ const server = http.createServer(app);
 validateEnv();
 
 // ─── CORS Configuration ───
-// Build the allowed origins list
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://wastemap-frontend-git-main-eyongrene211s-projects.vercel.app", // your current Vercel URL
-  env.CLIENT_URL, // any custom URL you set
-].filter(Boolean); // remove empty values
+  "https://wastemap-frontend-zeta.vercel.app/",
+  env.CLIENT_URL,
+].filter(Boolean);
 
-// Remove duplicates (in case CLIENT_URL matches one of the above)
 const uniqueAllowedOrigins = [...new Set(allowedOrigins)];
 
 console.log("✅ Allowed CORS origins:", uniqueAllowedOrigins);
@@ -36,15 +35,10 @@ console.log("✅ Allowed CORS origins:", uniqueAllowedOrigins);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
-
-      // In development, allow all origins for easier testing
       if (process.env.NODE_ENV === "development") {
         return callback(null, true);
       }
-
-      // In production, check against the allowed list
       if (uniqueAllowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -58,7 +52,7 @@ app.use(
   })
 );
 
-// ─── Other Middleware ───
+// ─── Middleware ───
 app.use(helmet());
 app.use(express.json());
 app.use(morgan("dev"));
@@ -80,11 +74,14 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ─── Error Handler (must be last) ───
+// ─── Error Handler ───
 app.use(errorHandler);
 
 // ─── Connect to MongoDB ───
 connectDB();
+
+// ─── Verify Email Transporter ───
+verifyTransporter(); // ✅ This will log success or failure
 
 // ─── Setup WebSocket ───
 const io = setupWebSocket(server);
