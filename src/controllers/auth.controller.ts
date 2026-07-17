@@ -44,7 +44,7 @@ export const requestOTP = async (req: Request, res: Response) => {
   }
 };
 
-// ─── Verify OTP + Register OR Login ───
+// ─── Verify OTP + Register (NOT LOGIN) ───
 export const verifyOTPAndRegister = async (req: Request, res: Response) => {
   try {
     const { email, otp, name, role, city, neighbourhood, language, password, phone } = req.body;
@@ -59,26 +59,14 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
     }
 
     // 2. Check if user already exists
-    let user = await User.findOne({ email });
+    const existingUser = await User.findOne({ email });
 
-    if (user) {
-      // ─── USER EXISTS — LOGIN ───
-      if (user.isSuspended) {
-        return res.status(403).json({ message: "Account suspended" });
-      }
-
-      const tokens = generateTokens(user._id.toString(), user.role);
-      return res.status(200).json({
-        message: "Login successful",
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          isVerified: user.isVerified,
-        },
-        tokens,
+    if (existingUser) {
+      // ❌ EXISTING USER – REJECT REGISTRATION
+      // The user should use the login endpoint instead.
+      return res.status(400).json({
+        message: "Email already registered. Please login instead.",
+        code: "EMAIL_EXISTS",
       });
     }
 
@@ -108,7 +96,7 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
       phone: phone || "",
     };
 
-    user = new User(userData);
+    const user = new User(userData);
     await user.save();
 
     // If collector, create collector profile
@@ -141,7 +129,7 @@ export const verifyOTPAndRegister = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Verify OTP error:", error);
 
-    // Handle duplicate key error
+    // Handle duplicate key error (if email already exists due to race condition)
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
       return res.status(400).json({
