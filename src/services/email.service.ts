@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ─── Verify Transporter on Startup ───
+// ─── Verify Transporter ───
 export async function verifyTransporter(): Promise<void> {
   try {
     await transporter.verify();
@@ -42,7 +42,7 @@ export async function sendEmail(
   }
 }
 
-// ─── Send OTP Email ───
+// ─── Send OTP Email (Always sends in production AND development) ───
 export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
   const subject = 'Your WasteMap CM Verification Code';
 
@@ -64,22 +64,15 @@ export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
     </div>
   `;
 
-  // In development, log OTP and return true (no real email sent)
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`📧 [DEV] OTP for ${to}: ${otp}`);
-    // Optionally still send for testing – uncomment below if you want real emails in dev
-    // return sendEmail(to, subject, html);
-    return true;
-  }
+  // Always log OTP (for debugging)
+  console.log(`📧 OTP for ${to}: ${otp}`);
 
-  // In production, send real email
-  console.log(`📧 [PROD] Attempting to send OTP to ${to}`);
+  // Always attempt to send real email (in all environments)
   const sent = await sendEmail(to, subject, html);
 
-  // Fallback: if send fails, log the OTP so it can be seen in logs
+  // If send fails, we still have the OTP logged (fallback)
   if (!sent) {
-    console.error(`❌ Email delivery failed for ${to}. OTP: ${otp}`);
-    console.log(`📧 [FALLBACK] OTP for ${to}: ${otp}`);
+    console.error(`❌ Email delivery failed for ${to}. OTP available in logs.`);
   }
 
   return sent;
