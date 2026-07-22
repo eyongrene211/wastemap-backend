@@ -1,7 +1,9 @@
-import { Server as HttpServer } from "http";
-import { Server, Socket }       from "socket.io";
-import { env }                  from "../config/env";
-import { verifyAccessToken }    from "../utils/jwt.utils";
+import { Server as HttpServer }          from "http";
+import { Server, Socket }                from "socket.io";
+import { env }                           from "../config/env";
+import { verifyAccessToken }             from "../utils/jwt.utils";
+import { distanceKm, ARRIVAL_RADIUS_KM } from "../utils/geo.utils";
+import { PickupRequest }                 from "../models/PickupRequest.model";
 
 interface CustomSocket extends Socket {
   userId?: string;
@@ -60,7 +62,7 @@ export const setupWebSocket = (server: HttpServer) => {
     });
 
     // ─── TRACKING: Collector Sends Location Update ───
-    socket.on("tracking:update", (data: { pickupId: string; lat: number; lng: number }) => {
+    socket.on("tracking:update", async (data: { pickupId: string; lat: number; lng: number }) => {
       const roomId = `pickup:${data.pickupId}`;
       socket.to(roomId).emit("tracking:location", {
         lat: data.lat,
@@ -69,6 +71,36 @@ export const setupWebSocket = (server: HttpServer) => {
         timestamp: new Date().toISOString(),
       });
       console.log(`📍 Location update from ${socket.userId} for pickup ${data.pickupId}: ${data.lat}, ${data.lng}`);
+
+      // ─── Server-side arrival detection ───
+      // Only the collector's own device sends these updates, but we treat
+      // the server as the source of truth: check distance to the resident's
+      // pin ourselves rather than trusting an "I've arrived" claim from the
+      // client, and persist the transition so it survives reconnects/refreshes.
+      if (socket.userRole !== "collector") return;
+
+      try {
+        const pickup = await PickupRequest.findById(data.pickupId);
+        if (!pickup || pickup.status !== "en_route") return;
+
+        const [pinLng, pinLat] = pickup.location.coordinates;
+        const distance = distanceKm(data.lat, data.lng, pinLat, pinLng);
+
+        if (distance <= ARRIVAL_RADIUS_KM) {
+          pickup.status = "arrived";
+          await pickup.save();
+
+          io.to(roomId).emit("tracking:status", {
+            status: "arrived",
+            eta: "0 min",
+            userId: socket.userId,
+            timestamp: new Date().toISOString(),
+          });
+          console.log(`✅ Pickup ${data.pickupId} auto-marked arrived (${distance.toFixed(3)}km from pin)`);
+        }
+      } catch (error) {
+        console.error(`❌ Arrival check failed for pickup ${data.pickupId}:`, error);
+      }
     });
 
     // ─── TRACKING: Status Update ───

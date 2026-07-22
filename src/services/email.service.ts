@@ -70,14 +70,17 @@ export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
     </div>
   `;
 
-  // Always log OTP (for debugging)
-  console.log(`📧 OTP for ${to}: ${otp}`);
+  // Only log the raw OTP locally, for dev debugging when Gmail SMTP is
+  // being flaky. This must never run in production — it would put a
+  // live verification code straight into the server logs.
+  if (env.NODE_ENV === "development") {
+    console.log(`📧 [DEV ONLY] OTP for ${to}: ${otp}`);
+  }
 
-  // Always attempt to send (even in development)
   const sent = await sendEmail(to, subject, html);
 
   if (!sent) {
-    console.log(`⚠️ Email delivery failed, but OTP is logged above for fallback.`);
+    console.error(`❌ OTP email delivery failed for ${to}.`);
   }
 
   return sent;

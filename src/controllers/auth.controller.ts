@@ -24,16 +24,19 @@ export const requestOTP = async (req: Request, res: Response) => {
     const otp = generateOTP();
     storeOTP(email, otp);
 
-    // Non-blocking email send
-    sendOTPEmail(email, otp).catch((err) => {
-      console.error('Background email send failed:', err.message);
-    });
+    // Await the send so we can tell the user if delivery actually failed —
+    // the OTP only exists in their inbox now, never in this response.
+    const emailSent = await sendOTPEmail(email, otp);
 
-    // ✅ Return OTP for demo fallback
+    if (!emailSent) {
+      return res.status(502).json({
+        message: "We couldn't send the verification email. Please try again in a moment.",
+      });
+    }
+
     return res.status(200).json({
       message: "OTP sent successfully",
       email,
-      otp,
     });
   } catch (error) {
     console.error("Request OTP error:", error);
