@@ -1,30 +1,29 @@
-import nodemailer from 'nodemailer';
-import { env }    from '../config/env';
+import axios   from "axios";
+import { env } from "../config/env";
 
-// ─── Create Transporter ───
-// ✅ Use port 587 (TLS) instead of 465 (SSL) – Render allows this
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: env.APP_EMAIL,
-    pass: env.GOOGLE_APP_PASSWORD,
-  },
-  port: 587,
-  secure: false, // false for port 587 (TLS)
-  tls: {
-    rejectUnauthorized: false, // Prevents SSL handshake issues on Render
-  },
-});
+// ─── Brevo (HTTPS API) ───
+// Switched from Nodemailer/Gmail SMTP because Render's free tier blocks all
+// outbound SMTP traffic (ports 25, 465, 587) as of Sept 2025 — this is a
+// platform-level firewall rule, not something fixable via credentials or
+// port/TLS settings. Brevo sends over plain HTTPS (port 443), which is never
+// blocked. Unlike Resend, Brevo lets a single verified sender address send
+// to ANY recipient on the free tier — no full domain/DNS verification
+// required, which matters here since real users register with arbitrary
+// email addresses, not just the developer's own inbox.
+const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
-// ─── Verify Transporter on Startup ───
+// ─── Verify Config on Startup ───
+// Brevo is a stateless HTTPS API, not a persistent connection like SMTP —
+// there's nothing to "connect" to ahead of time, so this just confirms the
+// required config is present rather than opening a socket.
 export async function verifyTransporter(): Promise<void> {
-  try {
-    await transporter.verify();
-    console.log('✅ Email transporter is ready (Gmail - TLS)');
-  } catch (error) {
-    console.error('❌ Email transporter verification failed. Check APP_EMAIL and GOOGLE_APP_PASSWORD.');
-    console.error('Error:', (error as Error).message);
+  if (!env.BREVO_API_KEY || !env.BREVO_SENDER_EMAIL) {
+    console.warn(
+      "⚠️  Brevo not configured (BREVO_API_KEY / BREVO_SENDER_EMAIL missing). OTP emails will not work until set."
+    );
+    return;
   }
+  console.log("✅ Brevo email API configured (HTTPS — unaffected by SMTP port blocks)");
 }
 
 // ─── Generic Email Sender ───
@@ -34,23 +33,36 @@ export async function sendEmail(
   html: string
 ): Promise<boolean> {
   try {
-    const info = await transporter.sendMail({
-      from: `"WasteMap CM" <${env.APP_EMAIL}>`,
-      to,
-      subject,
-      html,
-    });
-    console.log(`📧 Email sent to ${to}: ${info.messageId}`);
+    const response = await axios.post(
+      BREVO_API_URL,
+      {
+        sender: { name: "WasteMap CM", email: env.BREVO_SENDER_EMAIL },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "api-key": env.BREVO_API_KEY,
+        },
+        timeout: 15000,
+      }
+    );
+
+    console.log(`📧 Email sent to ${to}: ${response.data?.messageId}`);
     return true;
-  } catch (error) {
-    console.error('❌ Failed to send email:', (error as Error).message);
+  } catch (error: any) {
+    const details = error.response?.data || error.message;
+    console.error("❌ Failed to send email:", details);
     return false;
   }
 }
 
 // ─── Send OTP Email ───
 export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
-  const subject = 'Your WasteMap CM Verification Code';
+  const subject = "Your WasteMap CM Verification Code";
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7e4; border-radius: 12px;">
@@ -70,9 +82,9 @@ export async function sendOTPEmail(to: string, otp: string): Promise<boolean> {
     </div>
   `;
 
-  // Only log the raw OTP locally, for dev debugging when Gmail SMTP is
-  // being flaky. This must never run in production — it would put a
-  // live verification code straight into the server logs.
+  // Only log the raw OTP locally, for dev debugging. This must never run
+  // in production — it would put a live verification code straight into
+  // the server logs.
   if (env.NODE_ENV === "development") {
     console.log(`📧 [DEV ONLY] OTP for ${to}: ${otp}`);
   }

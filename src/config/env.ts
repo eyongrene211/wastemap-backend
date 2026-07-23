@@ -15,11 +15,19 @@ export const env = {
   JWT_ACCESS_EXPIRY: process.env.JWT_ACCESS_EXPIRY || "15m",
   JWT_REFRESH_EXPIRY: process.env.JWT_REFRESH_EXPIRY || "7d",
 
-  // ─── Email (Nodemailer with Gmail) ───
+  // ─── Email (Brevo HTTPS API — replaces SMTP/Gmail, which Render's free
+  // tier blocks outbound as of Sept 2025) ───
+  BREVO_API_KEY: process.env.BREVO_API_KEY || "",
+  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || "",
+
+  // ─── Email (Nodemailer with Gmail — kept for local dev / rollback only.
+  // Do NOT rely on this in production on Render's free tier: SMTP ports
+  // 25/465/587 are blocked outbound, so this will always time out there. ───
   APP_EMAIL: process.env.APP_EMAIL || "",
   GOOGLE_APP_PASSWORD: process.env.GOOGLE_APP_PASSWORD || "",
 
-  // ─── Resend (Legacy — kept for reference, but we're using Nodemailer now) ───
+  // ─── Resend (Legacy — kept for reference; requires a verified domain to
+  // send to arbitrary recipients, which Brevo doesn't) ───
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
 
   // ─── Africa's Talking (legacy — kept for later phone SMS re-integration) ───
@@ -70,9 +78,9 @@ export const validateEnv = () => {
   }
 
   // ─── Optional: Warn about missing email credentials ───
-  if (!process.env.APP_EMAIL || !process.env.GOOGLE_APP_PASSWORD) {
+  if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL) {
     console.warn(
-      "⚠️  Email credentials missing (APP_EMAIL / GOOGLE_APP_PASSWORD). OTP emails will not work until set."
+      "⚠️  Brevo email credentials missing (BREVO_API_KEY / BREVO_SENDER_EMAIL). OTP emails will not work until set."
     );
   }
 

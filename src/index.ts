@@ -1,18 +1,18 @@
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-import http from "http";
-import { env, validateEnv } from "./config/env";
-import { connectDB } from "./config/db";
-import authRoutes from "./routes/auth.routes";
-import residentRoutes from "./routes/resident.routes";
-import collectorRoutes from "./routes/collector.routes";
-import uploadRoutes from "./routes/upload.routes";
-import adminRoutes from "./routes/admin.routes";
-import paymentRoutes from "./routes/payment.routes";
-import { errorHandler } from "./middleware/error.middleware";
-import { setupWebSocket } from "./sockets";
+import express               from "express";
+import cors                  from "cors";
+import helmet                from "helmet";
+import morgan                from "morgan";
+import http                  from "http";
+import { env, validateEnv }  from "./config/env";
+import { connectDB }         from "./config/db";
+import authRoutes            from "./routes/auth.routes";
+import residentRoutes        from "./routes/resident.routes";
+import collectorRoutes       from "./routes/collector.routes";
+import uploadRoutes          from "./routes/upload.routes";
+import adminRoutes           from "./routes/admin.routes";
+import paymentRoutes         from "./routes/payment.routes";
+import { errorHandler }      from "./middleware/error.middleware";
+import { setupWebSocket }    from "./sockets";
 import { verifyTransporter } from "./services/email.service";
 
 const app = express();
@@ -29,8 +29,6 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const uniqueAllowedOrigins = [...new Set(allowedOrigins)];
-
-console.log("✅ Allowed CORS origins:", uniqueAllowedOrigins);
 
 app.use(
   cors({
@@ -96,9 +94,20 @@ server.listen(env.PORT, () => {
     paymentMode = "PayUnit (legacy)";
   }
 
+  // Render sets RENDER_EXTERNAL_URL automatically to the service's real
+  // public URL — use it when present so this log actually reflects reality
+  // in production instead of always claiming "localhost".
+  const publicUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${env.PORT}`;
+  const wsUrl = publicUrl.replace(/^http/, "ws");
+
+  const emailMode = env.BREVO_API_KEY && env.BREVO_SENDER_EMAIL
+    ? `Brevo (${env.BREVO_SENDER_EMAIL})`
+    : "NOT CONFIGURED — set BREVO_API_KEY / BREVO_SENDER_EMAIL";
+
   console.log(`🚀 Server running on port ${env.PORT}`);
   console.log(`📡 Environment: ${env.NODE_ENV}`);
-  console.log(`🔌 WebSocket enabled: ws://localhost:${env.PORT}`);
+  console.log(`🔌 WebSocket enabled: ${wsUrl}`);
   console.log(`💳 Payment mode: ${paymentMode}`);
+  console.log(`📧 Email provider: ${emailMode}`);
   console.log(`🌐 CORS allowed origins:`, uniqueAllowedOrigins);
 });
