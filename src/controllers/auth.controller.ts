@@ -1,11 +1,11 @@
-import { Request, Response }                from "express";
-import bcrypt                               from "bcryptjs";
-import { User }                             from "../models/User.model";
-import { CollectorProfile }                 from "../models/CollectorProfile.model";
-import { generateOTP, storeOTP, verifyOTP } from "../services/otp.service";
-import { sendOTPEmail }                     from "../services/email.service";
-import { generateTokens }                   from "../utils/jwt.utils";
-import { verifyRefreshToken }               from "../utils/jwt.utils";
+import { Request, Response }                                            from "express";
+import bcrypt                                                           from "bcryptjs";
+import { User }                                                         from "../models/User.model";
+import { CollectorProfile }                                             from "../models/CollectorProfile.model";
+import { generateOTP, storeOTP, verifyOTP, getResendCooldownRemaining } from "../services/otp.service";
+import { sendOTPEmail }                                                 from "../services/email.service";
+import { generateTokens }                                               from "../utils/jwt.utils";
+import { verifyRefreshToken }                                           from "../utils/jwt.utils";
 
 // ─── Request OTP ───
 export const requestOTP = async (req: Request, res: Response) => {
@@ -22,6 +22,19 @@ export const requestOTP = async (req: Request, res: Response) => {
     }
 
     const otp = generateOTP();
+
+    // Refuse to issue a new code while a recent one is still within its
+    // cooldown, instead of silently overwriting it — that overwrite is
+    // exactly what turns "I have a code in my inbox" into "invalid OTP"
+    // a moment later through no fault of the user's.
+    const cooldownRemaining = getResendCooldownRemaining(email);
+    if (cooldownRemaining !== null) {
+      return res.status(429).json({
+        message: `A code was already sent. Please wait ${cooldownRemaining}s before requesting another.`,
+        retryAfterSeconds: cooldownRemaining,
+      });
+    }
+
     storeOTP(email, otp);
 
     // Await the send so we can tell the user if delivery actually failed —

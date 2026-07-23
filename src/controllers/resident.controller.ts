@@ -7,6 +7,21 @@ import { Payment }           from "../models/Payment.model";
 import { Message }           from "../models/Message.model";
 import { AuthRequest }       from "../middleware/auth.middleware";
 
+// ─── Helper: Haversine distance ───
+function getDistance(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const R = 6371;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((from.lat * Math.PI) / 180) *
+      Math.cos((to.lat * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 // ──────────────────────────────────────────────
 // DASHBOARD
 // ──────────────────────────────────────────────
@@ -464,7 +479,7 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
 };
 
 // ──────────────────────────────────────────────
-// GET AVAILABLE COLLECTORS (for residents)
+// GET AVAILABLE COLLECTORS (FIXED)
 // ──────────────────────────────────────────────
 export const getAvailableCollectors = async (req: AuthRequest, res: Response) => {
   try {
@@ -480,25 +495,22 @@ export const getAvailableCollectors = async (req: AuthRequest, res: Response) =>
       availability: "online",
     };
 
-    // If location provided, try to find collectors with currentLocation
-    if (lat && lng) {
-      const latitude = parseFloat(lat as string);
-      const longitude = parseFloat(lng as string);
+    // ✅ REMOVED the requirement for currentLocation to exist
+    // Collectors without location will still appear.
 
-      // Get collectors with currentLocation and filter by distance in memory
-      query.currentLocation = {
-        $exists: true,
-        $ne: null,
-      };
-    }
-
-    const collectors = await CollectorProfile.find(query)
+    let collectors = await CollectorProfile.find(query)
       .populate("userId", "name phone avatar")
-      .limit(Number(limit))
       .lean();
 
-    const formattedCollectors = collectors.map((profile) => {
+    // Calculate distance if location provided
+    let collectorWithDistance: any[] = collectors.map((profile) => {
       const user = profile.userId as any;
+      let distance = null;
+      if (lat && lng && profile.currentLocation) {
+        const from = { lat: parseFloat(lat as string), lng: parseFloat(lng as string) };
+        const to = { lat: profile.currentLocation.lat, lng: profile.currentLocation.lng };
+        distance = getDistance(from, to);
+      }
       return {
         id: profile._id.toString(),
         userId: user?._id?.toString() || "",
@@ -508,7 +520,7 @@ export const getAvailableCollectors = async (req: AuthRequest, res: Response) =>
         rating: profile.rating || 0,
         reviews: profile.totalRatings || 0,
         vehicle: profile.vehicleType || "Tricycle",
-        distance: "1.2 km", // Calculate if location provided
+        distance: distance !== null ? `${distance.toFixed(1)} km` : "N/A",
         priceRangeMin: profile.priceRangeMin || 500,
         priceRangeMax: profile.priceRangeMax || 2000,
         acceptedWasteTypes: profile.acceptedWasteTypes || [],
@@ -518,9 +530,19 @@ export const getAvailableCollectors = async (req: AuthRequest, res: Response) =>
       };
     });
 
+    // If location provided, sort by distance (closest first)
+    if (lat && lng) {
+      collectorWithDistance = collectorWithDistance
+        .filter(c => c.distance !== "N/A")
+        .sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+    }
+
+    // Apply limit
+    collectorWithDistance = collectorWithDistance.slice(0, Number(limit));
+
     return res.status(200).json({
-      collectors: formattedCollectors,
-      count: formattedCollectors.length,
+      collectors: collectorWithDistance,
+      count: collectorWithDistance.length,
     });
   } catch (error) {
     console.error("Get available collectors error:", error);
