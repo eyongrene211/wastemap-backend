@@ -1,10 +1,18 @@
 import { Request, Response } from "express";
 import mongoose              from "mongoose";
+import { v2 as cloudinary }  from "cloudinary";
 import { User }              from "../models/User.model";
 import { CollectorProfile }  from "../models/CollectorProfile.model";
 import { PickupRequest }     from "../models/PickupRequest.model";
 import { Message }           from "../models/Message.model";
 import { AuthRequest }       from "../middleware/auth.middleware";
+import { env }               from "../config/env";
+
+cloudinary.config({
+  cloud_name: env.CLOUDINARY_CLOUD_NAME,
+  api_key: env.CLOUDINARY_API_KEY,
+  api_secret: env.CLOUDINARY_API_SECRET,
+});
 
 // ─── Get Collector Profile ───
 export const getCollectorProfile = async (req: AuthRequest, res: Response) => {
@@ -571,5 +579,73 @@ export const sendJobChatMessage = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Send job chat message error:", error);
     return res.status(500).json({ message: "Failed to send message" });
+  }
+};
+
+// ─── Submit KYC Documents ───
+// This was missing entirely — the frontend's KYC page has always posted to
+// this route, but nothing on the backend was listening for it, hence the
+// 404. Accepts two files (idDocument, selfiePhoto) via multer, uploads both
+// to Cloudinary, and stores the resulting URLs on the collector's profile.
+// Also handles resubmission after a rejection: clears the old rejection
+// reason and resets status back to "pending" for the admin to re-review.
+export const submitKYC = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    const idDocumentFile = files?.idDocument?.[0];
+    const selfiePhotoFile = files?.selfiePhoto?.[0];
+
+    if (!idDocumentFile || !selfiePhotoFile) {
+      return res.status(400).json({
+        message: "Both an ID document and a selfie photo are required.",
+      });
+    }
+
+    const profile = await CollectorProfile.findOne({ userId });
+    if (!profile) {
+      return res.status(404).json({ message: "Collector profile not found" });
+    }
+
+    const uploadToCloudinary = (file: Express.Multer.File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "wastemap/kyc",
+            resource_type: "image",
+            max_bytes: 5 * 1024 * 1024,
+          },
+          (error, result) => {
+            if (error || !result) return reject(error);
+            resolve(result.secure_url);
+          }
+        );
+        uploadStream.end(file.buffer);
+      });
+    };
+
+    const [idDocumentUrl, selfiePhotoUrl] = await Promise.all([
+      uploadToCloudinary(idDocumentFile),
+      uploadToCloudinary(selfiePhotoFile),
+    ]);
+
+    profile.kycIdDocumentUrl = idDocumentUrl;
+    profile.kycSelfiePhotoUrl = selfiePhotoUrl;
+    profile.kycSubmittedAt = new Date();
+    profile.kycStatus = "pending";
+    profile.kycRejectionReason = undefined;
+    await profile.save();
+
+    return res.status(200).json({
+      message: "KYC documents submitted successfully. Awaiting review.",
+      profile,
+    });
+  } catch (error) {
+    console.error("Submit KYC error:", error);
+    return res.status(500).json({ message: "Failed to submit KYC documents" });
   }
 };

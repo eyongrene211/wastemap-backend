@@ -297,7 +297,9 @@ export const getPendingKYC = async (req: AuthRequest, res: Response) => {
         vehicleType: profile.vehicleType,
         acceptedWasteTypes: profile.acceptedWasteTypes,
         serviceArea: profile.serviceArea,
-        submittedAt: profile.createdAt,
+        idDocument: profile.kycIdDocumentUrl,
+        selfiePhoto: profile.kycSelfiePhotoUrl,
+        submittedAt: profile.kycSubmittedAt || profile.createdAt,
       })),
       count: pendingProfiles.length,
     });

@@ -14,6 +14,9 @@ export interface ICollectorProfile extends Document {
   profilePhoto?: string;
   kycStatus: "pending" | "approved" | "rejected";
   kycRejectionReason?: string;
+  kycIdDocumentUrl?: string;
+  kycSelfiePhotoUrl?: string;
+  kycSubmittedAt?: Date;
   availability: "online" | "offline";
   capacityLimit: number;
   activeJobs: number;
@@ -81,6 +84,15 @@ const CollectorProfileSchema = new Schema<ICollectorProfile>(
     },
     kycRejectionReason: {
       type: String,
+    },
+    kycIdDocumentUrl: {
+      type: String,
+    },
+    kycSelfiePhotoUrl: {
+      type: String,
+    },
+    kycSubmittedAt: {
+      type: Date,
     },
     availability: {
       type: String,
